@@ -1,0 +1,40 @@
+services:
+  prefect-server:
+    image: prefecthq/prefect:3-python3.11
+    command: prefect server start --host 0.0.0.0
+    ports:
+      - "4200:4200"
+    volumes:
+      - prefect-data:/root/.prefect
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  etl:
+    build: .
+    env_file: .env
+    environment:
+      PREFECT_API_URL: http://prefect-server:4200/api
+    volumes:
+      - ./data:/app/data
+      # - ~/.aws:/home/etl/.aws:ro      # local AWS credentials, if you don't use env vars / a role
+    depends_on:
+      prefect-server:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Optional: fake S3 for developing the landing step without an AWS account.
+  #   docker compose --profile local up -d localstack
+  #   then set LOAD_TARGET=s3, S3_BUCKET=fin-lake, AWS_ENDPOINT_URL=http://localstack:4566 (Snowflake load stays off)
+  localstack:
+    image: localstack/localstack:3
+    profiles: ["local"]
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: s3
+
+volumes:
+  prefect-data:
